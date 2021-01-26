@@ -2759,8 +2759,8 @@ def HADiscoveryAdvertise (name, type="none", category="none", id='0', payON="tru
         return
     }
     if (nameSuffix!=null) log ("NameSuffix at HA advertise was removed: [$nameSuffix]","KGREEN")
-	//normName = normalize(name+nameSuffix)
-    normName = normalize(name)
+	normName = normalize(name+nameSuffix)
+    //normName = normalize(name)
 	log ("Advertising ${name} device ${type} ${category} to HA with ID $id","TRACE")
     if (id==0) log ("The ID for device $name $type was 0","WARN")
 	//if (nameMap.containsValue(name)) log ("Found in nameMap " + name, "LOG") else log ("NOT Found in nameMap " + name, "LOG")
