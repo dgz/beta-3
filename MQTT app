@@ -74,7 +74,7 @@ preferences {  // can't use atomicState vars in this section
 		        input name: "MQTTBroker", type: "text", title: "<b>MQTT Broker Address</b>&nbsp&nbsp&nbsp&nbsp&nbsp prefixed tcp://...", description: "e.g. tcp://192.168.1.17:1883  - NB you must include tcp://...", required: true, displayDuringSetup: true
 		        input name: "username", type: "text", title: "<b>MQTT Username</b>", description: "(leave blank if none)", required: false, displayDuringSetup: true
 		        input name: "password", type: "password", title: "<b>MQTT Password</b>", description: "(leave blank if none)", required: false, displayDuringSetup: true
-                input "cleanSession", "bool", title: "<b>Clean Session:</b><br> If OFF then should your MQTT session disconnect MQTT will remember your subscriptions and send messages you missed upon reconnection. [default: ON] requires HE v2.2.2+ ", required: true, defaultValue: false, submitOnChange: false
+                input "cleanSession", "bool", title: "<b>Clean Session:</b><br> If OFF then should your MQTT session disconnect MQTT will remember your subscriptions and send messages you missed upon reconnection. [default: ON] requires HE v2.2.2+ ", required: true, defaultValue: true, submitOnChange: false
                 //input "newMQTTDev", "button", title: "Create MQTT broker device driver", textColor: "green"
             }
 
@@ -725,8 +725,8 @@ def discovery() {  // can use atomicState vars in this section
     //dynamicPage(name: "discovery", title: "MQTT Discovery Protocols", install: true, nextPage: "configuration", uninstall: false) {
     dynamicPage(name: "discovery", title: "MQTT Discovery Protocols", nextPage: "configuration") {
 	section ("<h2><b>MQTT Discovery Protocols > HE </b></h2>(optional)"){
-		if (settings?.homieDiscovery && settings?.homieDevice!=null) homieEnabled='<font color="green">' else homieEnabled='<font color="darkred">'
-		if (settings?.HAStatestream && settings?.HAStatestreamTopic!=null)  HAEnabled='<font color="green">' else HAEnabled='<font color="darkred">'
+		if (settings?.homieDiscovery && settings?.homieDevice!=null && settings?.homieRunEvery) homieEnabled='<font color="green">' else homieEnabled='<font color="darkred">'
+		if (settings?.HAStatestream && settings?.HAStatestreamTopic!=null && settings?.HARunEvery)  HAEnabled='<font color="green">' else HAEnabled='<font color="darkred">'
         if (settings?.SonoffDiscovery)  SonoffEnabled='<font color="green">' else SonoffEnabled='<font color="darkred">'
         if (settings?.ShellyDiscovery)  ShellyEnabled='<font color="green">' else ShellyEnabled='<font color="darkred">'
 
@@ -802,6 +802,8 @@ def discovery() {  // can use atomicState vars in this section
         if (settings?.Homie_lock != null) hl = settings?.Homie_lock.size() else hl=0
         if (settings?.Homie_unknowns != null) hu = settings?.Homie_unknowns.size() else hu=0
     	input "homieDiscovery", "bool", title: "<b>homie 3 protocol<b>", required: true, defaultValue: false, submitOnChange: false
+        input "homieRunEvery", "bool", title: "<b>Run every time app starts</b>", required: true, defaultValue: false, submitOnChange: false
+        input "RunhomieDiscovery", "button", title: "Run homie Discovery now"
 		input name: "homieDevice", type: "text", title: "<b>homie device topic name</b>", description: "... to import devices from", required: false, displayDuringSetup: false
 		input "Homie_onoff", "enum", multiple: true, title: "<b>Discovered ${atomicState.onoffDevices.size()} homie switches &nbsp &nbsp &nbsp [^${ho}]</b>", options: atomicState.onoffDevices.sort()
 		input "Homie_dim", "enum", multiple: true, title: "<b>Discovered ${atomicState.dimDevices.size()} homie dimmers &nbsp &nbsp &nbsp [^${hd}]</b>", options: atomicState.dimDevices.sort()
@@ -844,7 +846,9 @@ def discovery() {  // can use atomicState vars in this section
             if (settings?.HA_Locks != null) HAlo = settings?.HA_Locks.size() else HAlo=0
             if (settings?.HA_DeviceTrackers != null) HAd = settings?.HA_DeviceTrackers.size() else HAd=0
             if (settings?.HA_Climates != null) HAcl = settings?.HA_Climates.size() else HAcl=0
-		    input "HAStatestream", "bool", title: "Home Assistant statestream", required: true, defaultValue: false, submitOnChange: true 
+		    input "HAStatestream", "bool", title: "Home Assistant statestream", required: true, defaultValue: false, submitOnChange: true
+            input "HARunEvery", "bool", title: "<b>Run every time app starts</b>", required: true, defaultValue: true, submitOnChange: false
+            input "RunHADiscovery", "button", title: "Run HA Discovery now"
 	    	input name: "HAStatestreamTopic", type: "text", title: "Home Assistant Statestream topic", description: "", required: false, displayDuringSetup: false
 	    	input "HA_Switches", "enum", multiple: true, title: "Discovered  ${atomicState.HASwitchDevices.size()} Home Assistant switches &nbsp &nbsp &nbsp [^${HAsw}]", options: atomicState.HASwitchDevices.sort()
 		    input "HA_Lights", "enum", multiple: true, title: "Discovered ${atomicState.HALightDevices.size()} Home Assistant lights &nbsp &nbsp &nbsp [^${HAli}]" , options: atomicState.HALightDevices.sort()
@@ -886,10 +890,23 @@ def appButtonHandler(btn) {
     else if (btn=="editVDev") {
         atomicState.edit=true
     }
+    else if (btn=="RunHADiscovery") {
+        log ("Asked to run HA Discovery","KH")
+        HADiscovery()
+    }
+    else if (btn=="RunhomieDiscovery") {
+        log ("Asked to run homie Discovery","KH")
+        homieDiscovery()
+    }
 }
 
 //child
 def createMQTTclient() {   //TODO IP username password
+    if (atomicState.FirstRun==true) {
+        log ("Skipped Client Creation as new run","KH")
+        return
+    }
+    else log ("Creating a new client","KH")
     namespace='ukusa'
     log ("FYI your MQTT child devices are ${getChildDevices()} ","INFO")
     childDev=getChildDevice("MQTT: Child device driver")  
@@ -976,7 +993,8 @@ def createVirtual () {
 
 def installed() {
 	log ( "${app.name} Installed","INFO")
-    //createMQTTclient() 
+    //createMQTTclient()
+    atomicState.FirstRun=true
 	atomicState.topicMap=[:]
 	atomicState.nameMap=[:]
     //createMQTTclient() 
@@ -1015,9 +1033,17 @@ def initialize() {
     mqtt = getChildDevice("MQTT: Child device driver")
     atomic_StateRemoves()
     if (mqtt==null) {
-        createMQTTclient() 
-        mqtt = getChildDevice("MQTT: Child device driver")
-        if (mqtt==null) log ("MQTT client failed to create","ERROR")
+        if (atomicState.FirstRun==false) {
+            createMQTTclient() 
+            mqtt = getChildDevice("MQTT: Child device driver")
+            if (mqtt==null) log ("MQTT client failed to create","ERROR")
+        }
+        else {
+            log ("Skipped creating MQTT client as first run","KH")
+            log ("Please run the app again","KH")
+            atomicState.FirstRun=false
+            return
+        }
     }
     else log ("MQTT Client driver present","INFO")
     atomicState.normHubName = normalize(settings?.hubName)
@@ -1165,7 +1191,7 @@ def initialize() {
 		mqtt.publishMsg ("homie/${atomicState.normHubName}/" +'$name',settings?.hubName,1,true)
 		mqtt.publishMsg ("homie/${atomicState.normHubName}/" +'$mac','BB:AA:DD:AA:55:55',1,true,atomicState.suppress)
 		mqtt.publishMsg ("homie/${atomicState.normHubName}/" +'$localip','1.2.3.4',1,true,atomicState.suppress)
-		mqtt.publishMsg ("homie/${atomicState.normHubName}/" +'$implementation/version','pre5 beta 3e',1,true,atomicState.suppress)
+		mqtt.publishMsg ("homie/${atomicState.normHubName}/" +'$implementation/version','pre6 beta 3e',1,true,atomicState.suppress)
         if (modes) currentMode()
         if (hsm) currentHSB()
         sunTimes()
@@ -1231,14 +1257,20 @@ def initialize() {
         runIn (atomicState.delay, "subscribeSonoffTopic")
         atomicState.delay += 0  //TODO tweak
     }	
-	if(settings?.homieDiscovery) {
+	if(settings?.homieDiscovery && settings?.homieRunEvery) {
 		runIn(atomicState.delay, "subscribeHomieTopic")
 		runIn(atomicState.delay, "subscribeHomieStateTopics")  
         runIn (atomicState.delay, "subscribeHomieNameTopics")
 	}
     else {
         log ("Skipping homie MQTT discovery", "INFO")
-        if((settings?.HAStatestream)) start_HADiscovery(null)
+        if(settings?.HAStatestream && settings?.HARunEvery) {
+            start_HADiscovery(null)
+        }
+        else {
+            log ("Skipping HA stateStream MQTT discovery", "INFO")
+            devSummary()
+        }
     }
                 
 	if (atomicState.abort) { 
@@ -1248,6 +1280,7 @@ def initialize() {
     
     subscribeVirtuals()  // this subscribes to any adhoc virtuals we have created
     schedule("0 1 0 1/1 * ? *", sunTimes)
+    atomicState.FirstRun=false
     log ("Initialize exit", "INFO")  
     if ((!settings?.homieDiscovery) && (!settings?.HAStatestream)) devSummary(null)
 
@@ -1297,7 +1330,7 @@ def mqttChange(evt) {  // Currently all types of devices (SWITCH DIMMER CONTACT)
 }    
 
 def atomic_StateRemoves() {
-    log  ("Removing unused atomicState variables","WARN")
+    log  ("Removing unused atomicState variables","info")
     atomicState.remove("lastDevice")
     atomicState.remove("lastDev")
     atomicState.remove("properties")
@@ -1666,6 +1699,7 @@ def deviceSubscribes(count) {  // TODO check - Here I might only have enabled on
  
 def everythingSubscribes(count) {   
     count = registerAll (everything,count)
+    log ("registering everything $settings.everything","KH")
     if (everything != null) log ("Registering $everything" , "LOG")
 }
 
@@ -2248,7 +2282,6 @@ def synchDevices() {
         count=0 
         everyThing.each {
             myName=it.displayName
-            
                 if (it.hasCommand ("refresh")) {
                     normName=normalize(myName)
             	    sTopic="homie/${atomicState.normHubName}/${normName}"
@@ -2267,7 +2300,7 @@ def synchDevices() {
                     return false
                 }
             else if (it.typeName.contains("Thermostat")){
-                devLoopAll (it,"all","thermostatDevices")  // passing all devices here not just sensors BUG
+                devLoopAll (it,"all","thermostatDevices")  
                 return false
             }
             else if (it.typeName.contains("OpenWeatherMap")){
@@ -2540,7 +2573,7 @@ def devLoopAll(dev, attribute, handler, type='none'){  // This registers all att
                     }
                     return
                 }
-                else if (attribute=='all' && handler=="thermostatDevices") { //Only use this for sensors - adds all attributes to device
+                else if (attribute=='all' && handler=="thermostatDevices") { 
                     attrs.each { attr ->
                         thermostatDevices(null, myName, "$attr", dev.currentValue("$attr"),dev,multiple)
                     }
@@ -2758,7 +2791,7 @@ def HADiscoveryAdvertise (name, type="none", category="none", id='0', payON="tru
         log ("Blocking advertising dimmer $name as a switch to HA ","TRACE")
         return
     }
-    if (nameSuffix!=null) log ("NameSuffix at HA advertise was removed: [$nameSuffix]","KGREEN")
+    //if (nameSuffix!=null) log ("NameSuffix at HA advertise was not removed: $name[$nameSuffix]","KGREEN")
 	normName = normalize(name+nameSuffix)
     //normName = normalize(name)
 	log ("Advertising ${name} device ${type} ${category} to HA with ID $id","TRACE")
@@ -2777,7 +2810,7 @@ def HADiscoveryAdvertise (name, type="none", category="none", id='0', payON="tru
         pID=''
     String ID = "${id}"
     if (ID != '0') {
-        pID= ',"device": {"identifiers": "HE_'+ ID + '","name": "'+name+ '","sw_version":"pre5 beta 3e","model":"'+"${atomicState.normHubName}"+'","manufacturer":"Hubitat"}'  // TODO Investigate if this can work
+        pID= ',"device": {"identifiers": "HE_'+ ID + '","name": "'+name+ '","sw_version":"pre6 beta 3e","model":"'+"${atomicState.normHubName}"+'","manufacturer":"Hubitat"}'  // TODO Investigate if this can work
     }
     else log ("ID is 0 for device $name  $type","WARN")
 		pON = ',"payload_on":"true"'  //default for booleans in homie
@@ -3338,9 +3371,22 @@ def subscribeHomieNameTopics() {
 }
 
 def start_HADiscovery(evt){
+    if (!settings?.HARunEvery){
+        log ("Skipping HA Discovery","INFO")
+        devSummary()
+        return
+    }
+    else HADiscovery (evt)
+}
+def homieDiscovery() {
+    	runIn(1, "subscribeHomieTopic")
+		runIn(1, "subscribeHomieStateTopics")  
+        runIn (1, "subscribeHomieNameTopics")
+}
+def HADiscovery (evt) {
     mqtt = getChildDevice("MQTT: Child device driver")
     if ((evt==null)||(evt.value=="HAstart")){
-        if (settings?.homieDiscovery) { // can unsubscribe from these now as no longer used
+        if (settings?.homieDiscovery) { // can unsubscribe from these now as no longer used   TODO must unsubscribe if run once too now
         time=(int) ((now()-atomicState.timeStamp)/1000)    
         log ("======= homie Discovery has completed in $time secs =======","BLUE")
         mqtt.unsubscribeTopic('homie/'+atomicState.homie+'/+/$name')
@@ -4017,7 +4063,6 @@ def thermostatDevices(evt, name=null, type=null, state=null, device=null, multip
 		xName=name+nameSuffix
 		log ("thermostatDevices (synch) called with name:${name}    xName: ${xName}    type: ${type} / ${xType}   state: ${state}    multiple: ${multiple}","DEBUG")
 	}
-    
 	    normName = normalize(name)
 		normxName = normalize(xName)
         settable="false"
@@ -4181,16 +4226,17 @@ def thermostatDevices(evt, name=null, type=null, state=null, device=null, multip
             } 
             
             else if (xType=="hysteresis"){  // not currently handled
+                log ("Unhandled attribute in [$name] >> hysteresis", "WARN")
                 return
             }
             else if (xType=="schedule"){   // not currently handled
-                return
+                log ("Unhandled attribute in [$name] >> schedule", "WARN")
             }
             
 			
             else {
 				category = 'unknown'
-				log ("[t] Unknown category for type #${xType}# reported by device ${name}","INFO")
+				log ("[t] Unknown category for attribute #${xType}# reported by device ${name}","INFO")
                 category = 'unknown_'+normalize(xType)
 			}
 			
@@ -5530,7 +5576,7 @@ def HALightFriendlyP (name,label,type){
 }
 
 def HASensorTypeP (topic2,payload,topic1) {    //   (topic[2],deQuote(payload[0]),topic[1])
-    HASensorType(topic2,payload,ctopic1)
+    HASensorType(topic2,payload,topic1)
 }
 
 
@@ -5549,7 +5595,7 @@ def HASensorType(topic2,payload,topic1) { //device_type
 		temp.add(topic2)
 		atomicState.HASensorDevices = temp
 	}
-	//createChildDevice (topic2, topic1, "HA", label, sType)
+	createChildDevice (topic2, topic1, "HA", label, sType)  //this creates a sensor device of type device_class
 }
 
 def HASensorFriendlyP (name,label,type) {
@@ -6634,12 +6680,12 @@ def createChildDevice(name, type, system, friendlyName=null, dType='default',seq
 		else if (dType=="safety") devType= "Virtual Contact Sensor"
         else if (dType=="smoke") devType= "Virtual Smoke Detector"
 		else if (dType=="sound") devType= "Virtual audioVolume"  // check think this is not boolean
-        else if (dType=="temperature") devType= "Virtual Temperature Sensor"  // check think this is not boolean
+        else if (dType=="temperature") devType= "Virtual Temperature Sensor"  // check think this is not boolean           
         else if (dType=="variable") devType= "RM Connector Variable"
         //else if (dType=="vibration") devType= "Virtual Motion Sensor"
         else if (dType=="vibration") devType= "Generic Glass Break Detector"
         else if (dType=="window") devType= "Virtual Contact Sensor"
-		else log (name + " found no device type mapping for " + dType + '  ' +  devType,"WARN")
+        else  log (name + " found no device type mapping for ==$dType== " + dType + '  ' +  devType,"WARN")
 	}
 	// ######  This is where to add additional device types and their matching driver ######			 
 	else {
